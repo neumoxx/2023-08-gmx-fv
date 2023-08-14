@@ -1,69 +1,26 @@
 using OracleStoreHarness as oracleStore;
 
-definition UINT256_MAX() returns uint256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
 methods {
     // RoleStore
     function _.hasRole(address,bytes32) external => DISPATCHER(true);
 }
 
-//-----------------------------------------------------------------------------
-// EnumerableSet Invariant Lib (Begin)
-//-----------------------------------------------------------------------------
-// Based on spec for EnumerableSet found here: https://github.com/Certora/Examples/tree/master/CVLByExample/QuantifierExamples/EnumerableSet
 
-// GHOST COPIES
-ghost mapping(mathint => bytes32) ghostValues {
-    init_state axiom forall mathint x. ghostValues[x] == to_bytes32(0);
-}
-ghost mapping(bytes32 => uint256) ghostIndexes {
-    init_state axiom forall bytes32 x. ghostIndexes[x] == 0;
-}
-ghost uint256 ghostLength {
-    // assumption: it's infeasible to grow the list to these many elements.
-    axiom ghostLength < 0xffffffffffffffffffffffffffffffff;
-}
+// DEFINITION
 
-// HOOKS
+definition UINT256_MAX() returns uint256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
-hook Sstore currentContract.signers.(offset 0) uint256 newLength STORAGE {
-    ghostLength = newLength;
-}
-hook Sstore currentContract.signers._inner._values[INDEX uint256 index] bytes32 newValue STORAGE {
-    ghostValues[index] = newValue;
-}
-hook Sstore currentContract.signers._inner._indexes[KEY bytes32 value] uint256 newIndex STORAGE {
-    ghostIndexes[value] = newIndex;
-}
-
-hook Sload uint256 length currentContract.signers.(offset 0) STORAGE {
-    require ghostLength == length;
-}
-hook Sload bytes32 value currentContract.signers._inner._values[INDEX uint256 index] STORAGE {
-    require ghostValues[index] == value;
-}
-hook Sload uint256 index currentContract.signers._inner._indexes[KEY bytes32 value] STORAGE {
-    require ghostIndexes[value] == index;
-}
-
-// INVARIANTS
-
-invariant setInvariant()
-    (forall uint256 index. 0 <= index && index < ghostLength => to_mathint(ghostIndexes[ghostValues[index]]) == index + 1)
-    && (forall bytes32 value. ghostIndexes[value] == 0 ||
-         (ghostValues[ghostIndexes[value] - 1] == value && ghostIndexes[value] >= 1 && ghostIndexes[value] <= ghostLength));
-
-//-----------------------------------------------------------------------------
-// Enumerable Set Invariant Lib (End)
-//-----------------------------------------------------------------------------
+/// @notice Functions defined in harness contract
+definition notHarnessCall(method f) returns bool =
+    (f.selector != sig:signersContains(address).selector
+    && f.selector != sig:hasRoleWrapper(bytes32).selector
+    && f.selector != sig:hasControllerRole().selector
+    && f.selector != sig:getSignerSetValues().selector
+    && f.selector != sig:getSignerSetIndexFor(address).selector);
 
 
-rule sanity_satisfy(method f) {
-    env e;
-    calldataarg args;
-    f(e, args);
-    satisfy true;
-}
+// RULES
 
 // Natural language specifications
 // 1. for addSigner, if the caller does not have the controller role
@@ -342,3 +299,145 @@ rule remove_signer_deletes_no_others {
 
     assert(oracleStore.signersContains(e, some_other_signer));
 }
+
+////
+
+rule addSignerConsistencyCheck(env e) {
+
+  address account;
+
+  bool isController = hasControllerRole(e);
+
+  addSigner@withrevert(e, account);
+  bool lastRev = lastReverted;
+
+  assert lastRev <=> e.msg.value > 0 || !isController, "addSigner not payable and only callable by controller";
+  assert !lastRev => (
+    signersContains(e, account) == true
+  );
+
+}
+
+rule removeSignerConsistencyCheck(env e) {
+
+  address account;
+
+  bool isController = hasControllerRole(e);
+  bool containsAccount = signersContains(e, account);
+
+  removeSigner@withrevert(e, account);
+  bool lastRev = lastReverted;
+
+  assert lastRev <=> e.msg.value > 0 || !isController || !containsAccount, "removeSigner not payable and only callable by controller";
+  assert !lastRev => (
+    signersContains(e, account) == false
+  );
+
+}
+
+
+rule getSignerCountConsistencyCheck(env e) {
+
+  uint256 length = getSignerCount@withrevert(e);
+
+  assert lastReverted <=> e.msg.value > 0;
+  assert !lastReverted => ghostLength == length;
+
+}
+
+
+rule getSignerConsistencyCheck(env e) {
+
+  uint256 index;
+  getSigner@withrevert(e, index);
+
+  assert lastReverted <=> e.msg.value > 0 || index > getSignerCount(e);
+
+  address account;
+  addSigner(e, account);
+  uint256 lastIndex = assert_uint256(getSignerCount(e));
+  address signer = getSigner(e, lastIndex);
+
+  assert signer == account;
+
+}
+
+
+rule getSignersConsistencyCheck(env e) {
+
+  uint256 start;
+  uint256 end;
+
+  require end - start == 2;
+  require end < getSignerCount(e);
+
+  address[] signers = getSigners@withrevert(e, start, end);
+
+  assert start > end || e.msg.value > 0 <=> lastReverted;
+  assert !lastReverted <=> (
+    to_bytes32(assert_uint256(signers[0])) == ghostValues[start] &&
+    to_bytes32(assert_uint256(signers[1])) == ghostValues[start + 1]
+  );
+
+}
+
+
+rule sanity_satisfy(method f) {
+    env e;
+    calldataarg args;
+    f(e, args);
+    satisfy true;
+}
+
+
+//-----------------------------------------------------------------------------
+// EnumerableSet Invariant Lib (Begin)
+//-----------------------------------------------------------------------------
+// Based on spec for EnumerableSet found here: https://github.com/Certora/Examples/tree/master/CVLByExample/QuantifierExamples/EnumerableSet
+
+// GHOST COPIES
+ghost mapping(mathint => bytes32) ghostValues {
+    init_state axiom forall mathint x. ghostValues[x] == to_bytes32(0);
+    axiom forall mathint x. to_mathint(require_uint256(ghostValues[x])) <= 0xffffffffffffffffffffffffffffffffffffffff;
+}
+ghost mapping(bytes32 => uint256) ghostIndexes {
+    init_state axiom forall bytes32 x. ghostIndexes[x] == 0;
+}
+ghost uint256 ghostLength {
+    // assumption: it's infeasible to grow the list to these many elements.
+    axiom ghostLength < 0xffffffffffffffffffffffffffffffff;
+}
+
+// HOOKS
+
+hook Sstore currentContract.signers.(offset 0) uint256 newLength STORAGE {
+    ghostLength = newLength;
+}
+hook Sstore currentContract.signers._inner._values[INDEX uint256 index] bytes32 newValue STORAGE {
+    ghostValues[index] = newValue;
+}
+hook Sstore currentContract.signers._inner._indexes[KEY bytes32 value] uint256 newIndex STORAGE {
+    ghostIndexes[value] = newIndex;
+}
+
+hook Sload uint256 length currentContract.signers.(offset 0) STORAGE {
+    require ghostLength == length;
+}
+hook Sload bytes32 value currentContract.signers._inner._values[INDEX uint256 index] STORAGE {
+    require ghostValues[index] == value;
+}
+hook Sload uint256 index currentContract.signers._inner._indexes[KEY bytes32 value] STORAGE {
+    require ghostIndexes[value] == index;
+}
+
+// INVARIANTS
+
+invariant setInvariant()
+    (forall uint256 index. 0 <= index && index < ghostLength => to_mathint(ghostIndexes[ghostValues[index]]) == index + 1)
+    && (forall bytes32 value. ghostIndexes[value] == 0 ||
+         (ghostValues[ghostIndexes[value] - 1] == value && ghostIndexes[value] >= 1 && ghostIndexes[value] <= ghostLength));
+
+//-----------------------------------------------------------------------------
+// Enumerable Set Invariant Lib (End)
+//-----------------------------------------------------------------------------
+
