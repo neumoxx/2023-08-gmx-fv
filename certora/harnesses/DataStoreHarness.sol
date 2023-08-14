@@ -4,5 +4,53 @@ pragma solidity ^0.8.0;
 import "../../contracts/data/DataStore.sol";
 
 contract DataStoreHarness is DataStore {
+
+    bytes32 public constant CONTROLLER = keccak256(abi.encode("CONTROLLER"));
+
     constructor(RoleStore _roleStore) DataStore(_roleStore) {}
+
+    function maxInt256() external returns (int256) {
+        return type(int256).max;
+    }
+
+    function minInt256() external returns (int256) {
+        return type(int256).min;
+    }
+
+    function stringLength(string calldata value) external returns (uint256) {
+        return bytes(value).length;
+    }
+
+    function stringsEqual(string calldata a, string calldata b) external pure returns (bool) {
+        return keccak256(abi.encode(a)) == keccak256(abi.encode(b));
+    }
+
+    function uintArraysEqual(uint256[] calldata a, uint256[] calldata b) external pure returns (bool) {
+        return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
+    }
+
+    function intArraysEqual(int256[] calldata a, int256[] calldata b) external pure returns (bool) {
+        return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
+    }
+
+    function addressArraysEqual(address[] calldata a, address[] calldata b) external pure returns (bool) {
+        return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
+    }
+
+    function boolArraysEqual(bool[] calldata a, bool[] calldata b) external pure returns (bool) {
+        return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
+    }
+
+    function stringArraysEqual(string[] calldata a, string[] calldata b) external pure returns (bool) {
+        return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
+    }
+
+    function stringArraysEqual(string[] calldata a, bytes32 key) external view returns (bool) {
+        string[] memory b = this.getStringArray(key);
+        return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
+    }
+
+    function bytes32ArraysEqual(bytes32[] calldata a, bytes32[] calldata b) external pure returns (bool) {
+        return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
+    }
 }
