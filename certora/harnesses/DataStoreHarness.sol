@@ -2,10 +2,11 @@
 pragma solidity ^0.8.0;
 
 import "../../contracts/data/DataStore.sol";
+import {Role} from "../../contracts/role/Role.sol";
 
 contract DataStoreHarness is DataStore {
 
-    bytes32 public constant CONTROLLER = keccak256(abi.encode("CONTROLLER"));
+    using SafeCast for int256;
 
     constructor(RoleStore _roleStore) DataStore(_roleStore) {}
 
@@ -21,7 +22,7 @@ contract DataStoreHarness is DataStore {
         return bytes(value).length;
     }
 
-    function stringsEqual(string calldata a, string calldata b) external pure returns (bool) {
+    function stringsEqual(string memory a, string memory b) external pure returns (bool) {
         return keccak256(abi.encode(a)) == keccak256(abi.encode(b));
     }
 
@@ -41,10 +42,6 @@ contract DataStoreHarness is DataStore {
         return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
     }
 
-    function stringArraysEqual(string[] calldata a, string[] calldata b) external pure returns (bool) {
-        return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
-    }
-
     function stringArraysEqual(string[] calldata a, bytes32 key) external view returns (bool) {
         string[] memory b = this.getStringArray(key);
         return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
@@ -52,5 +49,18 @@ contract DataStoreHarness is DataStore {
 
     function bytes32ArraysEqual(bytes32[] calldata a, bytes32[] calldata b) external pure returns (bool) {
         return a.length == b.length && keccak256(abi.encode(a)) == keccak256(abi.encode(b));
+    }
+
+    function hasRoleWrapper(bytes32 role) public view returns (bool) {
+        return roleStore.hasRole(msg.sender, role);
+    }
+
+    function hasControllerRole() public view returns (bool) {
+        return hasRoleWrapper(Role.CONTROLLER);
+    }
+
+    function applyDeltaToUintRevertCondition(bytes32 key, int256 value) external view returns (bool) {
+        uint256 currValue = uintValues[key];
+        return value < 0 && (-value).toUint256() > currValue;
     }
 }

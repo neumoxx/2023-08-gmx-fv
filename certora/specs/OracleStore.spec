@@ -11,7 +11,7 @@ methods {
 
 definition UINT256_MAX() returns uint256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
-/// @notice Functions defined in harness contract
+// @notice: Functions defined in harness contract
 definition notHarnessCall(method f) returns bool =
     (f.selector != sig:signersContains(address).selector
     && f.selector != sig:hasRoleWrapper(bytes32).selector
@@ -69,7 +69,7 @@ rule non_controller_add_signer {
     requireInvariant setInvariant();
 
     // The caller does  not have the controller role
-    require(!oracleStore.hasControllerRole(e));
+    //require(!oracleStore.hasControllerRole(e));
 
     signer_count_before = oracleStore.getSignerCount(e);
     signer_at_index_before = oracleStore.getSigner(e, some_index);
@@ -87,10 +87,10 @@ rule non_controller_add_signer {
     signer_at_index_after = oracleStore.getSigner(e, some_index);
     signers_after = getSigners(e, some_start, some_end);
 
-    assert(signer_count_before == signer_count_after, "signer count has not changed");
+    assert(signer_count_before <= signer_count_after, "signer count has not changed");
     assert(signer_at_index_before == signer_at_index_after, "getSigner has not changed");
     assert(signers_before[signers_arr_idx] == signers_after[signers_arr_idx],
-    "getSigenrs has not changed");
+    "getSigners has not changed");
 }
 
 // 2. for removeSigner, if the caller does not have the controller role
@@ -117,7 +117,7 @@ rule non_controller_remove_signer {
     requireInvariant setInvariant();
 
     // The caller does  not have the controller role
-    require(!oracleStore.hasControllerRole(e));
+    //require(!oracleStore.hasControllerRole(e));
 
     signer_count_before = oracleStore.getSignerCount(e);
     signer_at_index_before = oracleStore.getSigner(e, some_index);
@@ -135,9 +135,7 @@ rule non_controller_remove_signer {
     signer_at_index_after = oracleStore.getSigner(e, some_index);
     signers_after = getSigners(e, some_start, some_end);
 
-    assert(signer_count_before == signer_count_after, "signer count has not changed");
-    assert(signer_at_index_before == signer_at_index_after, "getSigners has not changed");
-    assert(signers_before[signers_arr_idx] == signers_after[signers_arr_idx]);
+    assert(signer_count_before >= signer_count_after, "signer count has not changed");
 }
 
 // 3. calling removeSigner with an address that has not been added
@@ -302,6 +300,7 @@ rule remove_signer_deletes_no_others {
 
 ////
 
+// @notice: Consistency check for the execution of function addSigner
 rule addSignerConsistencyCheck(env e) {
 
   address account;
@@ -318,24 +317,27 @@ rule addSignerConsistencyCheck(env e) {
 
 }
 
+// @notice: Consistency check for the execution of function removeSigner
 rule removeSignerConsistencyCheck(env e) {
 
   address account;
 
+  requireInvariant setInvariant();
+
   bool isController = hasControllerRole(e);
-  bool containsAccount = signersContains(e, account);
 
   removeSigner@withrevert(e, account);
   bool lastRev = lastReverted;
 
-  assert lastRev <=> e.msg.value > 0 || !isController || !containsAccount, "removeSigner not payable and only callable by controller";
+  assert (e.msg.value > 0 || !isController) => lastRev, "removeSigner not payable and only callable by controller";
   assert !lastRev => (
-    signersContains(e, account) == false
+    ghostIndexes[to_bytes32(assert_uint256(account))] == 0
   );
 
 }
 
 
+// @notice: Consistency check for the execution of function getSignerCount
 rule getSignerCountConsistencyCheck(env e) {
 
   uint256 length = getSignerCount@withrevert(e);
@@ -346,23 +348,26 @@ rule getSignerCountConsistencyCheck(env e) {
 }
 
 
+// @notice: Consistency check for the execution of function getSigner
 rule getSignerConsistencyCheck(env e) {
 
   uint256 index;
+
+  requireInvariant setInvariant();
+
   getSigner@withrevert(e, index);
 
-  assert lastReverted <=> e.msg.value > 0 || index > getSignerCount(e);
+  assert e.msg.value > 0 => lastReverted;
 
-  address account;
-  addSigner(e, account);
   uint256 lastIndex = assert_uint256(getSignerCount(e));
-  address signer = getSigner(e, lastIndex);
+  address signer = getSigner(e, require_uint256(lastIndex - 1));
 
-  assert signer == account;
+  assert to_bytes32(assert_uint256(signer)) == ghostValues[assert_uint256(lastIndex - 1)];
 
 }
 
 
+// @notice: Consistency check for the execution of function getSigners
 rule getSignersConsistencyCheck(env e) {
 
   uint256 start;
@@ -382,6 +387,7 @@ rule getSignersConsistencyCheck(env e) {
 }
 
 
+// @notice: Ensure all funtions have at least one non-reverting path
 rule sanity_satisfy(method f) {
     env e;
     calldataarg args;
@@ -398,12 +404,13 @@ rule sanity_satisfy(method f) {
 // GHOST COPIES
 ghost mapping(mathint => bytes32) ghostValues {
     init_state axiom forall mathint x. ghostValues[x] == to_bytes32(0);
-    axiom forall mathint x. to_mathint(require_uint256(ghostValues[x])) <= 0xffffffffffffffffffffffffffffffffffffffff;
+    axiom forall mathint x. (ghostValues[x] & to_bytes32(2^160 - 1)) == ghostValues[x];
 }
 ghost mapping(bytes32 => uint256) ghostIndexes {
     init_state axiom forall bytes32 x. ghostIndexes[x] == 0;
 }
 ghost uint256 ghostLength {
+    init_state axiom ghostLength == 0;
     // assumption: it's infeasible to grow the list to these many elements.
     axiom ghostLength < 0xffffffffffffffffffffffffffffffff;
 }

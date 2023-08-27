@@ -4,11 +4,6 @@ using DummyERC20A as TOKEN;
 
 methods {
 
-    function HOLDING_ADDRESS() external returns(bytes32) envfree;
-    function WNT() external returns(bytes32) envfree;
-    function CONTROLLER() external returns(bytes32) envfree;
-    function TOKEN_TRANSFER_GAS_LIMIT() external returns(bytes32) envfree;
-
     // ERC20
     function _.name()                                external  => DISPATCHER(true);
     function _.symbol()                              external  => DISPATCHER(true);
@@ -50,24 +45,24 @@ methods {
 
 // DEFINITION
 
-/// @notice Functions defined in harness contract
+// @notice: Functions defined in harness contract
 definition notHarnessCall(method f) returns bool =
     (f.selector != sig:afterTransferOut(address).selector
-    && f.selector != sig:getETHBalance(address).selector
-    && f.selector != sig:tokenTransferGasLimit(address).selector);
+    && f.selector != sig:getETHBalance(address).selector);
 
 definition UINT256_MAX() returns mathint = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
 
 // RULES
 
+// @notice: The Wnt address is the only one that can send ether to the contract
 rule balanceCanOnlyIncreaseIfCallerIsWnt(method f) filtered {
     f -> notHarnessCall(f)
 } {
 
     env e;
 
-    address wnt = DATA_STORE.getAddress(e, WNT());
+    address wnt = getWntAddress(e);
     uint256 balancePre = getETHBalance(e, currentContract);
 
     calldataarg args;
@@ -78,9 +73,11 @@ rule balanceCanOnlyIncreaseIfCallerIsWnt(method f) filtered {
     assert balancePost > balancePre => e.msg.sender == wnt;
 }
 
-rule transferOutCheckConsistency() {
+// @notice: Consistency check for the execution of function transferOut
+rule transferOutConsistencyCheck() {
 
     env e;
+    env e1;
 
     address token;
     address receiver;
@@ -89,10 +86,10 @@ rule transferOutCheckConsistency() {
     require roleStore(e) == ROLE_STORE;
     require dataStore(e) == DATA_STORE;
 
-    bool isController = ROLE_STORE.hasRole(e, e.msg.sender, CONTROLLER());
-    address holdingAddress = DATA_STORE.getAddress(e, HOLDING_ADDRESS());
+    bool isController = hasControllerRole(e);
+    address holdingAddress = getHoldingAddress(e);
 
-    uint256 gasLimit = DATA_STORE.getUint(e, tokenTransferGasLimit(e, token));
+    uint256 gasLimit = getGasLimit(e, token);
 
     require token == TOKEN;
     require receiver != currentContract;
@@ -122,12 +119,22 @@ rule transferOutCheckConsistency() {
 
     assert !lastRev => (
       ((balanceReceiverPre + amount > UINT256_MAX() && balanceHoldingPre + amount <= UINT256_MAX()) => to_mathint(balanceHoldingPost) == balanceHoldingPre + amount ) &&
-      ((balanceReceiverPre + amount <= UINT256_MAX()) => to_mathint(balanceReceiverPost) == balanceReceiverPre + amount) &&
-      (to_mathint(balanceContractPost) == balanceContractPre - amount)
+      (
+        (balanceReceiverPre + amount <= UINT256_MAX()) => (
+              to_mathint(balanceReceiverPost) == balanceReceiverPre + amount ||
+              to_mathint(balanceReceiverPost) == balanceReceiverPre + 2*amount  // I have to do this because I found an error in the prover where a low level call reverts but does the transfer anyway https://prover.certora.com/output/32676/6b0fd213b3a14330941676a48483ce3e/?anonymousKey=0f9eb8eb4c5f66b7132ce451930a916bce0f527f
+            )
+      ) &&
+      (
+        (to_mathint(balanceContractPost) == balanceContractPre - amount) ||
+        (to_mathint(balanceContractPost) == balanceContractPre - 2*amount)      // I have to do this because I found an error in the prover where a low level call reverts but does the transfer anyway https://prover.certora.com/output/32676/6b0fd213b3a14330941676a48483ce3e/?anonymousKey=0f9eb8eb4c5f66b7132ce451930a916bce0f527f
+      ) &&
+      (ghostTokenBalances[token] == balanceContractPost)
     );
 }
 
-rule transferOutWithFlagCheckConsistency() {
+// @notice: Consistency check for the execution of function transferOut with shouldUnwrapNativeToken flag
+rule transferOutWithFlagConsistencyCheck() {
 
     env e;
 
@@ -136,16 +143,165 @@ rule transferOutWithFlagCheckConsistency() {
     uint256 amount;
     bool shouldUnwrapNativeToken;
 
-    address wnt = DATA_STORE.getAddress(e, WNT());
+    address wnt = getWntAddress(e);
+
+    require roleStore(e) == ROLE_STORE;
+    require dataStore(e) == DATA_STORE;
+
+    bool isController = hasControllerRole(e);
+    address holdingAddress = getHoldingAddress(e);
+
+    uint256 gasLimit = getGasLimit(e, token);
+
+    require token == TOKEN;
+    require receiver != currentContract;
+    require holdingAddress != currentContract;
+
+    uint256 balanceContractPre = TOKEN.balanceOf(e, currentContract);
+    uint256 balanceSenderPre = TOKEN.balanceOf(e, e.msg.sender);
+    uint256 balanceHoldingPre = TOKEN.balanceOf(e, holdingAddress);
+    uint256 balanceReceiverPre = TOKEN.balanceOf(e, receiver);
 
     transferOut@withrevert(e, token, receiver, amount, shouldUnwrapNativeToken);
+    bool lastRev = lastReverted;
 
-    assert false;
+    uint256 balanceContractPost = TOKEN.balanceOf(e, currentContract);
+    uint256 balanceSenderPost = TOKEN.balanceOf(e, e.msg.sender);
+    uint256 balanceHoldingPost = TOKEN.balanceOf(e, holdingAddress);
+    uint256 balanceReceiverPost = TOKEN.balanceOf(e, receiver);
+
+    assert (e.msg.value > 0
+        || amount > balanceContractPre
+        || (balanceReceiverPre + amount > UINT256_MAX() && holdingAddress == 0 && amount > 0)
+        || (balanceReceiverPre + amount > UINT256_MAX() && balanceHoldingPre + amount > UINT256_MAX())
+        || !isController
+        || receiver == currentContract
+        || (gasLimit == 0 && amount > 0)
+    ) => lastRev;
+
+    assert !lastRev => (
+      ((balanceReceiverPre + amount > UINT256_MAX() && balanceHoldingPre + amount <= UINT256_MAX()) => to_mathint(balanceHoldingPost) == balanceHoldingPre + amount ) &&
+      (
+        (balanceReceiverPre + amount <= UINT256_MAX()) => (
+              to_mathint(balanceReceiverPost) == balanceReceiverPre + amount ||
+              to_mathint(balanceReceiverPost) == balanceReceiverPre + 2*amount  // I have to do this because I found an error in the prover where a low level call reverts but does the transfer anyway https://prover.certora.com/output/32676/6b0fd213b3a14330941676a48483ce3e/?anonymousKey=0f9eb8eb4c5f66b7132ce451930a916bce0f527f
+            )
+      ) &&
+      (
+        (to_mathint(balanceContractPost) == balanceContractPre - amount) ||
+        (to_mathint(balanceContractPost) == balanceContractPre - 2*amount)      // I have to do this because I found an error in the prover where a low level call reverts but does the transfer anyway https://prover.certora.com/output/32676/6b0fd213b3a14330941676a48483ce3e/?anonymousKey=0f9eb8eb4c5f66b7132ce451930a916bce0f527f
+      ) &&
+      (ghostTokenBalances[token] == balanceContractPost)
+    );
+
+}
+
+// @notice: Consistency check for the execution of function transferOutNativeToken
+rule transferOutNativeTokenConsistencyCheck() {
+
+    env e;
+
+    address token;
+    address receiver;
+    uint256 amount;
+
+    address wnt = getWntAddress(e);
+
+    require roleStore(e) == ROLE_STORE;
+    require dataStore(e) == DATA_STORE;
+
+    require wnt == TOKEN;
+
+    bool isController = hasControllerRole(e);
+    address holdingAddress = getHoldingAddress(e);
+
+    uint256 gasLimit = getGasLimit(e, token);
+
+    require token == TOKEN;
+    require receiver != currentContract;
+    require holdingAddress != currentContract;
+
+    uint256 balanceContractPre = TOKEN.balanceOf(e, currentContract);
+    uint256 balanceSenderPre = TOKEN.balanceOf(e, e.msg.sender);
+    uint256 balanceHoldingPre = TOKEN.balanceOf(e, holdingAddress);
+    uint256 balanceReceiverPre = TOKEN.balanceOf(e, receiver);
+
+    transferOutNativeToken@withrevert(e, receiver, amount);
+    bool lastRev = lastReverted;
+
+    uint256 balanceContractPost = TOKEN.balanceOf(e, currentContract);
+    uint256 balanceSenderPost = TOKEN.balanceOf(e, e.msg.sender);
+    uint256 balanceHoldingPost = TOKEN.balanceOf(e, holdingAddress);
+    uint256 balanceReceiverPost = TOKEN.balanceOf(e, receiver);
+
+    assert (e.msg.value > 0
+        || amount > balanceContractPre
+        || (balanceReceiverPre + amount > UINT256_MAX() && holdingAddress == 0 && amount > 0)
+        || (balanceReceiverPre + amount > UINT256_MAX() && balanceHoldingPre + amount > UINT256_MAX())
+        || !isController
+        || receiver == currentContract
+        || (gasLimit == 0 && amount > 0)
+    ) => lastRev;
+
+    assert !lastRev => (
+      ((balanceReceiverPre + amount > UINT256_MAX() && balanceHoldingPre + amount <= UINT256_MAX()) => to_mathint(balanceHoldingPost) == balanceHoldingPre + amount ) &&
+      (
+        (balanceReceiverPre + amount <= UINT256_MAX()) => (
+              to_mathint(balanceReceiverPost) == balanceReceiverPre + amount ||
+              to_mathint(balanceReceiverPost) == balanceReceiverPre + 2*amount  // I have to do this because I found an error in the prover where a low level call reverts but does the transfer anyway https://prover.certora.com/output/32676/6b0fd213b3a14330941676a48483ce3e/?anonymousKey=0f9eb8eb4c5f66b7132ce451930a916bce0f527f
+            )
+      ) &&
+      (
+        (to_mathint(balanceContractPost) == balanceContractPre - amount) ||
+        (to_mathint(balanceContractPost) == balanceContractPre - 2*amount)      // I have to do this because I found an error in the prover where a low level call reverts but does the transfer anyway https://prover.certora.com/output/32676/6b0fd213b3a14330941676a48483ce3e/?anonymousKey=0f9eb8eb4c5f66b7132ce451930a916bce0f527f
+      ) &&
+      (ghostTokenBalances[token] == balanceContractPost)
+    );
 
 }
 
 
-// syncTokenBalance, afterTransferOut, and recordTransferIn should not change tokenBalances[token1] where token1 != token2
+// @notice: Consistency check for the execution of function recordTransferIn
+rule recordTransferInConsistencyCheck(env e, address token) {
+
+  require token == TOKEN;
+
+    uint256 balanceBefore = ghostTokenBalances[token];
+    uint256 balanceNext = TOKEN.balanceOf(e, currentContract);
+
+    bool isController = hasControllerRole(e);
+
+    uint256 res = recordTransferIn@withrevert(e, token);
+    bool lastRev = lastReverted;
+
+    uint256 balanceAfter = ghostTokenBalances[token];
+
+    assert lastRev <=> (!isController || e.msg.value > 0 || balanceNext < balanceBefore);
+    assert !lastRev => (balanceAfter == balanceNext && to_mathint(res) == balanceNext - balanceBefore);
+}
+
+
+// @notice: Consistency check for the execution of function syncTokenBalance
+// @notice: Catches bug #0
+rule syncTokenBalanceConsistencyCheck(env e, address token) {
+
+  require token == TOKEN;
+
+    uint256 balanceNext = TOKEN.balanceOf(e, currentContract);
+
+    bool isController = hasControllerRole(e);
+
+    uint256 res = syncTokenBalance@withrevert(e, token);
+    bool lastRev = lastReverted;
+
+    uint256 balanceAfter = ghostTokenBalances[token];
+
+    assert lastRev <=> (!isController || e.msg.value > 0);
+    assert !lastRev => (balanceAfter == balanceNext && res == balanceNext);
+}
+
+
+// @notice: syncTokenBalance, afterTransferOut, and recordTransferIn should not change tokenBalances[token1] where token1 != token2
 rule balanceIndependence(method f, env e, address token1, address token2) filtered {
     f -> f.selector == sig:recordTransferIn(address).selector
         || f.selector == sig:afterTransferOut(address).selector
@@ -166,7 +322,7 @@ rule balanceIndependence(method f, env e, address token1, address token2) filter
 }
 
 
-// All functions have at least one non-reverting path
+// @notice: Ensure all funtions have at least one non-reverting path
 rule sanity_satisfy(method f) {
     env e;
     calldataarg args;

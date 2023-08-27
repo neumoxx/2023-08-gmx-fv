@@ -2,12 +2,10 @@
 pragma solidity ^0.8.0;
 
 import "../../contracts/role/RoleStore.sol";
+import "../../contracts/role/Role.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 contract RoleStoreHarness is RoleStore {
-
-    bytes32 public constant ROLE_ADMIN = keccak256(abi.encode("ROLE_ADMIN"));
-    bytes32 public constant TIMELOCK_MULTISIG = keccak256(abi.encode("TIMELOCK_MULTISIG"));
 
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -25,5 +23,21 @@ contract RoleStoreHarness is RoleStore {
 
     function getRoleMemberByIndex(bytes32 roleKey, uint256 index) external view returns (address) {
         return roleMembers[roleKey].at(index);
+    }
+
+    function bytes32ToUint(bytes32 val) external view returns (uint256) {
+        return uint256(val);
+    }
+
+    function addressToBytes32(address val) external view returns (bytes32) {
+        return bytes32(uint256(uint160(val)));
+    }
+
+    function ROLE_ADMIN() external view returns (bytes32) {
+        return Role.ROLE_ADMIN;
+    }
+
+    function TIMELOCK_MULTISIG() external view returns (bytes32) {
+        return Role.TIMELOCK_MULTISIG;
     }
 }
