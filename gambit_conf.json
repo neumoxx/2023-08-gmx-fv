@@ -1,0 +1,62 @@
+[
+  {
+    "filename": "contracts/oracle/Oracle.sol",
+    "solc": "solc-0.8.19",
+    "outdir": "./certora/mutations/gambit/",
+    "solc_remappings": [
+      "@openzeppelin=node_modules/@openzeppelin"
+    ],
+    "random_seed": true,
+    "num_mutants": 20
+  },
+  {
+    "filename": "contracts/oracle/OracleStore.sol",
+    "solc": "solc-0.8.19",
+    "outdir": "./certora/mutations/gambit/",
+    "solc_remappings": [
+      "@openzeppelin=node_modules/@openzeppelin"
+    ],
+    "random_seed": true,
+    "num_mutants": 20
+  },
+  {
+    "filename": "contracts/bank/Bank.sol",
+    "solc": "solc-0.8.19",
+    "outdir": "./certora/mutations/gambit/",
+    "solc_remappings": [
+      "@openzeppelin=node_modules/@openzeppelin"
+    ],
+    "random_seed": true,
+    "num_mutants": 20
+  },
+  {
+    "filename": "contracts/bank/StrictBank.sol",
+    "solc": "solc-0.8.19",
+    "outdir": "./certora/mutations/gambit/",
+    "solc_remappings": [
+      "@openzeppelin=node_modules/@openzeppelin"
+    ],
+    "random_seed": true,
+    "num_mutants": 20
+  },
+  {
+    "filename": "contracts/data/DataStore.sol",
+    "solc": "solc-0.8.19",
+    "outdir": "./certora/mutations/gambit/",
+    "solc_remappings": [
+      "@openzeppelin=node_modules/@openzeppelin"
+    ],
+    "random_seed": true,
+    "num_mutants": 20
+  },
+  {
+    "filename": "contracts/role/RoleStore.sol",
+    "solc": "solc-0.8.19",
+    "outdir": "./certora/mutations/gambit/",
+    "solc_remappings": [
+      "@openzeppelin=node_modules/@openzeppelin"
+    ],
+    "random_seed": true,
+    "num_mutants": 20
+  }
+]

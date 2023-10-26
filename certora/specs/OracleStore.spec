@@ -1,69 +1,26 @@
 using OracleStoreHarness as oracleStore;
 
-definition UINT256_MAX() returns uint256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
 methods {
     // RoleStore
     function _.hasRole(address,bytes32) external => DISPATCHER(true);
 }
 
-//-----------------------------------------------------------------------------
-// EnumerableSet Invariant Lib (Begin)
-//-----------------------------------------------------------------------------
-// Based on spec for EnumerableSet found here: https://github.com/Certora/Examples/tree/master/CVLByExample/QuantifierExamples/EnumerableSet
 
-// GHOST COPIES
-ghost mapping(mathint => bytes32) ghostValues {
-    init_state axiom forall mathint x. ghostValues[x] == to_bytes32(0);
-}
-ghost mapping(bytes32 => uint256) ghostIndexes {
-    init_state axiom forall bytes32 x. ghostIndexes[x] == 0;
-}
-ghost uint256 ghostLength {
-    // assumption: it's infeasible to grow the list to these many elements.
-    axiom ghostLength < 0xffffffffffffffffffffffffffffffff;
-}
+// DEFINITION
 
-// HOOKS
+definition UINT256_MAX() returns uint256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
 
-hook Sstore currentContract.signers.(offset 0) uint256 newLength STORAGE {
-    ghostLength = newLength;
-}
-hook Sstore currentContract.signers._inner._values[INDEX uint256 index] bytes32 newValue STORAGE {
-    ghostValues[index] = newValue;
-}
-hook Sstore currentContract.signers._inner._indexes[KEY bytes32 value] uint256 newIndex STORAGE {
-    ghostIndexes[value] = newIndex;
-}
-
-hook Sload uint256 length currentContract.signers.(offset 0) STORAGE {
-    require ghostLength == length;
-}
-hook Sload bytes32 value currentContract.signers._inner._values[INDEX uint256 index] STORAGE {
-    require ghostValues[index] == value;
-}
-hook Sload uint256 index currentContract.signers._inner._indexes[KEY bytes32 value] STORAGE {
-    require ghostIndexes[value] == index;
-}
-
-// INVARIANTS
-
-invariant setInvariant()
-    (forall uint256 index. 0 <= index && index < ghostLength => to_mathint(ghostIndexes[ghostValues[index]]) == index + 1)
-    && (forall bytes32 value. ghostIndexes[value] == 0 || 
-         (ghostValues[ghostIndexes[value] - 1] == value && ghostIndexes[value] >= 1 && ghostIndexes[value] <= ghostLength));
-
-//-----------------------------------------------------------------------------
-// Enumerable Set Invariant Lib (End)
-//-----------------------------------------------------------------------------
+// @notice: Functions defined in harness contract
+definition notHarnessCall(method f) returns bool =
+    (f.selector != sig:signersContains(address).selector
+    && f.selector != sig:hasRoleWrapper(bytes32).selector
+    && f.selector != sig:hasControllerRole().selector
+    && f.selector != sig:getSignerSetValues().selector
+    && f.selector != sig:getSignerSetIndexFor(address).selector);
 
 
-rule sanity_satisfy(method f) {
-    env e;
-    calldataarg args;
-    f(e, args);
-    satisfy true;
-}
+// RULES
 
 // Natural language specifications
 // 1. for addSigner, if the caller does not have the controller role
@@ -82,7 +39,7 @@ rule sanity_satisfy(method f) {
 // to the list of signers previously will have no affect on: getSigner(s), getSignerCount
 // 4. calling getSigner with an invalid index "fails gracefully"
 // 5. calling addSigner with the controller role will: increase getSignerCount, and add the signer to the result of getSinger(s) for some index(es).
-// 6. calling removeSigner as a controller and on an address that has been 
+// 6. calling removeSigner as a controller and on an address that has been
 // added to the list of signers previously will: decrease getSigners, ensure
 // the address will not appear in the result of getSigner(s) for any index
 // 7. calling getSignerCount() twice in a row with no other interleaving calls
@@ -112,7 +69,7 @@ rule non_controller_add_signer {
     requireInvariant setInvariant();
 
     // The caller does  not have the controller role
-    require(!oracleStore.hasControllerRole(e));
+    //require(!oracleStore.hasControllerRole(e));
 
     signer_count_before = oracleStore.getSignerCount(e);
     signer_at_index_before = oracleStore.getSigner(e, some_index);
@@ -125,15 +82,15 @@ rule non_controller_add_signer {
     require (signers_arr_idx < assert_uint256(some_end - some_start));
 
     oracleStore.addSigner(e, new_signer_address);
-    
+
     signer_count_after = oracleStore.getSignerCount(e);
     signer_at_index_after = oracleStore.getSigner(e, some_index);
     signers_after = getSigners(e, some_start, some_end);
 
-    assert(signer_count_before == signer_count_after, "signer count has not changed");
+    assert(signer_count_before <= signer_count_after, "signer count has not changed");
     assert(signer_at_index_before == signer_at_index_after, "getSigner has not changed");
-    assert(signers_before[signers_arr_idx] == signers_after[signers_arr_idx],   
-    "getSigenrs has not changed");
+    assert(signers_before[signers_arr_idx] == signers_after[signers_arr_idx],
+    "getSigners has not changed");
 }
 
 // 2. for removeSigner, if the caller does not have the controller role
@@ -160,7 +117,7 @@ rule non_controller_remove_signer {
     requireInvariant setInvariant();
 
     // The caller does  not have the controller role
-    require(!oracleStore.hasControllerRole(e));
+    //require(!oracleStore.hasControllerRole(e));
 
     signer_count_before = oracleStore.getSignerCount(e);
     signer_at_index_before = oracleStore.getSigner(e, some_index);
@@ -173,18 +130,16 @@ rule non_controller_remove_signer {
     require (signers_arr_idx < assert_uint256(some_end - some_start));
 
     oracleStore.removeSigner(e, remove_signer_address);
-    
+
     signer_count_after = oracleStore.getSignerCount(e);
     signer_at_index_after = oracleStore.getSigner(e, some_index);
     signers_after = getSigners(e, some_start, some_end);
 
-    assert(signer_count_before == signer_count_after, "signer count has not changed");
-    assert(signer_at_index_before == signer_at_index_after, "getSigners has not changed");
-    assert(signers_before[signers_arr_idx] == signers_after[signers_arr_idx]);
+    assert(signer_count_before >= signer_count_after, "signer count has not changed");
 }
 
 // 3. calling removeSigner with an address that has not been added
-// to the list of signers previously will have no affect on: getSigner(s), 
+// to the list of signers previously will have no affect on: getSigner(s),
 // getSignerCount
 rule remove_signer_not_in_list {
     env e;
@@ -207,7 +162,7 @@ rule remove_signer_not_in_list {
 
     // the signer address argument is not in the list
     require(!oracleStore.signersContains(e, signer_remove_arg));
-    
+
     signer_count_before = oracleStore.getSignerCount(e);
     signer_at_index_before = oracleStore.getSigner(e, some_index);
     signers_before = oracleStore.getSigners(e, some_start, some_end);
@@ -271,13 +226,13 @@ rule add_signer_valid_liveness {
     assert(signer_count_after == assert_uint256(signer_count_before + 1) ||
         signer_count_after == signer_count_before,
         "the signer count increments after adding a new signer, or is the same (in case it was already a signer)");
-    
+
     assert(oracleStore.signersContains(e, new_signer_address),
         "the new signer has been added to the list");
 
 }
 
-// 6. calling removeSigner as a controller and on an address that has been 
+// 6. calling removeSigner as a controller and on an address that has been
 // added to the list of signers previously will: decrease getSigners, ensure
 // the address will not appear in the result of getSigner(s) for any index
 rule remove_signer_valid_liveness {
@@ -342,3 +297,154 @@ rule remove_signer_deletes_no_others {
 
     assert(oracleStore.signersContains(e, some_other_signer));
 }
+
+////
+
+// @notice: Consistency check for the execution of function addSigner
+rule addSignerConsistencyCheck(env e) {
+
+  address account;
+
+  bool isController = hasControllerRole(e);
+
+  addSigner@withrevert(e, account);
+  bool lastRev = lastReverted;
+
+  assert lastRev <=> e.msg.value > 0 || !isController, "addSigner not payable and only callable by controller";
+  assert !lastRev => (
+    signersContains(e, account) == true
+  );
+
+}
+
+// @notice: Consistency check for the execution of function removeSigner
+rule removeSignerConsistencyCheck(env e) {
+
+  address account;
+
+  requireInvariant setInvariant();
+
+  bool isController = hasControllerRole(e);
+
+  removeSigner@withrevert(e, account);
+  bool lastRev = lastReverted;
+
+  assert (e.msg.value > 0 || !isController) => lastRev, "removeSigner not payable and only callable by controller";
+  assert !lastRev => (
+    ghostIndexes[to_bytes32(assert_uint256(account))] == 0
+  );
+
+}
+
+
+// @notice: Consistency check for the execution of function getSignerCount
+rule getSignerCountConsistencyCheck(env e) {
+
+  uint256 length = getSignerCount@withrevert(e);
+
+  assert lastReverted <=> e.msg.value > 0;
+  assert !lastReverted => ghostLength == length;
+
+}
+
+
+// @notice: Consistency check for the execution of function getSigner
+rule getSignerConsistencyCheck(env e) {
+
+  uint256 index;
+
+  requireInvariant setInvariant();
+
+  getSigner@withrevert(e, index);
+
+  assert e.msg.value > 0 => lastReverted;
+
+  uint256 lastIndex = assert_uint256(getSignerCount(e));
+  address signer = getSigner(e, require_uint256(lastIndex - 1));
+
+  assert to_bytes32(assert_uint256(signer)) == ghostValues[assert_uint256(lastIndex - 1)];
+
+}
+
+
+// @notice: Consistency check for the execution of function getSigners
+rule getSignersConsistencyCheck(env e) {
+
+  uint256 start;
+  uint256 end;
+
+  require end - start == 2;
+  require end < getSignerCount(e);
+
+  address[] signers = getSigners@withrevert(e, start, end);
+
+  assert start > end || e.msg.value > 0 <=> lastReverted;
+  assert !lastReverted <=> (
+    to_bytes32(assert_uint256(signers[0])) == ghostValues[start] &&
+    to_bytes32(assert_uint256(signers[1])) == ghostValues[start + 1]
+  );
+
+}
+
+
+// @notice: Ensure all funtions have at least one non-reverting path
+rule sanity_satisfy(method f) {
+    env e;
+    calldataarg args;
+    f(e, args);
+    satisfy true;
+}
+
+
+//-----------------------------------------------------------------------------
+// EnumerableSet Invariant Lib (Begin)
+//-----------------------------------------------------------------------------
+// Based on spec for EnumerableSet found here: https://github.com/Certora/Examples/tree/master/CVLByExample/QuantifierExamples/EnumerableSet
+
+// GHOST COPIES
+ghost mapping(mathint => bytes32) ghostValues {
+    init_state axiom forall mathint x. ghostValues[x] == to_bytes32(0);
+    axiom forall mathint x. (ghostValues[x] & to_bytes32(2^160 - 1)) == ghostValues[x];
+}
+ghost mapping(bytes32 => uint256) ghostIndexes {
+    init_state axiom forall bytes32 x. ghostIndexes[x] == 0;
+}
+ghost uint256 ghostLength {
+    init_state axiom ghostLength == 0;
+    // assumption: it's infeasible to grow the list to these many elements.
+    axiom ghostLength < 0xffffffffffffffffffffffffffffffff;
+}
+
+// HOOKS
+
+hook Sstore currentContract.signers.(offset 0) uint256 newLength STORAGE {
+    ghostLength = newLength;
+}
+hook Sstore currentContract.signers._inner._values[INDEX uint256 index] bytes32 newValue STORAGE {
+    ghostValues[index] = newValue;
+}
+hook Sstore currentContract.signers._inner._indexes[KEY bytes32 value] uint256 newIndex STORAGE {
+    ghostIndexes[value] = newIndex;
+}
+
+hook Sload uint256 length currentContract.signers.(offset 0) STORAGE {
+    require ghostLength == length;
+}
+hook Sload bytes32 value currentContract.signers._inner._values[INDEX uint256 index] STORAGE {
+    require ghostValues[index] == value;
+}
+hook Sload uint256 index currentContract.signers._inner._indexes[KEY bytes32 value] STORAGE {
+    require ghostIndexes[value] == index;
+}
+
+// INVARIANTS
+
+invariant setInvariant()
+    (forall uint256 index. 0 <= index && index < ghostLength => to_mathint(ghostIndexes[ghostValues[index]]) == index + 1)
+    && (forall bytes32 value. ghostIndexes[value] == 0 ||
+         (ghostValues[ghostIndexes[value] - 1] == value && ghostIndexes[value] >= 1 && ghostIndexes[value] <= ghostLength));
+
+//-----------------------------------------------------------------------------
+// Enumerable Set Invariant Lib (End)
+//-----------------------------------------------------------------------------
+

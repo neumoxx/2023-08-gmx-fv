@@ -704,6 +704,8 @@ rule bytes32SetsConsistencyChecks1(env e) {
     bytes32 key;
     bytes32 value;
 
+    requireInvariant bytes32SetsEnumerableSetInvariant();
+
     bool isController = hasControllerRole(e);
 
     // addBytes32 & containsBytes32
@@ -711,7 +713,7 @@ rule bytes32SetsConsistencyChecks1(env e) {
     bool lastRev1 = lastReverted;
     bool contained1 = containsBytes32(key, value);
     assert lastRev1 <=> (e.msg.value > 0 || !isController);
-    //assert !lastRev1 => contained1;
+    assert !lastRev1 => contained1;
 
 }
 
@@ -721,13 +723,15 @@ rule bytes32SetsConsistencyChecks2(env e) {
     bytes32 key;
     bytes32 value;
 
+    requireInvariant bytes32SetsEnumerableSetInvariant();
+
     bool isController = hasControllerRole(e);
 
     // getBytes32Count
     addBytes32(e, key, value);
     uint256 length = getBytes32Count@withrevert(key);
     assert !lastReverted;
-    //assert length > 0;
+    assert length > 0;
 
 }
 
@@ -736,6 +740,8 @@ rule bytes32SetsConsistencyChecks3(env e) {
 
     bytes32 key;
     bytes32 value;
+
+    requireInvariant bytes32SetsEnumerableSetInvariant();
 
     bool isController = hasControllerRole(e);
 
@@ -754,6 +760,8 @@ rule addressSetsConsistencyChecks1(env e) {
     bytes32 key;
     address value;
 
+    requireInvariant addressSetsEnumerableSetInvariant();
+
     bool isController = hasControllerRole(e);
 
     // addAddress & containsAddress
@@ -761,7 +769,7 @@ rule addressSetsConsistencyChecks1(env e) {
     bool lastRev1 = lastReverted;
     bool contained1 = containsAddress(key, value);
     assert lastRev1 <=> (e.msg.value > 0 || !isController);
-    //assert !lastRev1 => contained1;
+    assert !lastRev1 => contained1;
 
 }
 
@@ -771,13 +779,15 @@ rule addressSetsConsistencyChecks2(env e) {
     bytes32 key;
     address value;
 
+    requireInvariant addressSetsEnumerableSetInvariant();
+
     bool isController = hasControllerRole(e);
 
     // getAddressCount
     addAddress(e, key, value);
     uint256 length = getAddressCount@withrevert(key);
     assert !lastReverted;
-    //assert length > 0;
+    assert length > 0;
 
 }
 
@@ -786,6 +796,8 @@ rule addressSetsConsistencyChecks3(env e) {
 
     bytes32 key;
     address value;
+
+    requireInvariant addressSetsEnumerableSetInvariant();
 
     bool isController = hasControllerRole(e);
 
@@ -804,6 +816,8 @@ rule uintSetsConsistencyChecks1(env e) {
     bytes32 key;
     uint value;
 
+    requireInvariant uintSetsEnumerableSetInvariant();
+
     bool isController = hasControllerRole(e);
 
     // addUint & containsUint
@@ -811,7 +825,7 @@ rule uintSetsConsistencyChecks1(env e) {
     bool lastRev1 = lastReverted;
     bool contained1 = containsUint(key, value);
     assert lastRev1 <=> (e.msg.value > 0 || !isController);
-    //assert !lastRev1 => contained1;
+    assert !lastRev1 => contained1;
 
 }
 
@@ -821,13 +835,15 @@ rule uintSetsConsistencyChecks2(env e) {
     bytes32 key;
     uint value;
 
+    requireInvariant uintSetsEnumerableSetInvariant();
+
     bool isController = hasControllerRole(e);
 
     // getUintCount
     addUint(e, key, value);
     uint256 length = getUintCount@withrevert(key);
     assert !lastReverted;
-    //assert length > 0;
+    assert length > 0;
 
 }
 
@@ -836,6 +852,8 @@ rule uintSetsConsistencyChecks3(env e) {
 
     bytes32 key;
     uint value;
+
+    requireInvariant uintSetsEnumerableSetInvariant();
 
     bool isController = hasControllerRole(e);
 
@@ -857,7 +875,6 @@ rule sanity_satisfy(method f) {
 }
 
 
-/*
 // GHOST COPIES:
 // For every storage variable we add a ghost field that is kept synchronized by hooks.
 // The ghost fields can be accessed by the spec, even inside quantifiers.
@@ -1029,5 +1046,3 @@ invariant uintSetsEnumerableSetInvariant()
         (uintSetsGhostValues[roleKey][uintSetsGhostIndexes[roleKey][value] - 1] == value && uintSetsGhostIndexes[roleKey][value] >= 1 && uintSetsGhostIndexes[roleKey][value] <= uintSetsGhostLength[roleKey])
       )
     );
-
-*/
